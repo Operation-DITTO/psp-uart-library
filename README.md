@@ -1,8 +1,8 @@
 # SioDriver
-Library Serial In Out port on the PSP
+Library Serial In/Out port on the PSP
 ============================
 
-![header](header.jpg)
+[Header File](sioDriver.h)
 
 This is a library that allows the use of serial console functions of the PSP.
 

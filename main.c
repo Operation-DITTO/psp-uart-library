@@ -5,7 +5,7 @@
 	Developed by Davis Nuñez - David.nunezaguilera.131@gmail.com
 	
 	Licensed by Creative Commons Attribution-Share 4.0
-		http://creativecommons.org/licenses/by-sa/4.0/
+		https://creativecommons.org/licenses/by-sa/4.0/
 
 	Version: 
 		4.0 Full - 13/01/2016 - 13:34 pm
@@ -27,57 +27,44 @@ PSP_MODULE_INFO("sioDriverv4", 0x1006, 1, 1);
 PSP_NO_CREATE_MAIN_THREAD(); 
 
 // no changes here...the same good old consts
-#define PSP_UART4_DIV1 0xBE500024
-#define PSP_UART4_DIV2 0xBE500028
-#define PSP_UART4_CTRL 0xBE50002C
-#define PSP_UART_CLK   96000000
-#define SIO_CHAR_RECV_EVENT  0x01
+#define PSP_UART4_DIV1 				0xBE500024
+#define PSP_UART4_DIV2 				0xBE500028
+#define PSP_UART4_CTRL 				0xBE50002C
+#define PSP_UART4_FIFO 				0xBE500000
+#define PSP_UART4_STAT 				0xBE500018
 
-#define PSP_UART4_FIFO 0xBE500000
-#define PSP_UART4_STAT 0xBE500018
+#define SIO_CHAR_RECV_EVENT  		0x01
 
-#define PSP_UART_TXFULL  0x20
-#define PSP_UART_RXEMPTY 0x10
-
-static SceUID sio_eventflag = -1;
-
-// imported power functions prototypes
-void sceHprmEnd(void);
-void sceHprmReset(void);
-void sceHprmInit(void);
-
-void sceSysregUartIoEnable(int);
-// prototypes for stubs
-int sceCodecOutputEnable(int, int); // enable_hearphone, enable_speaker
-int sceHprmSetConnectCallback(int); // for parameters...just a guess: have to look into disassemblies.
-int sceHprmRegisterCallback(int);
-
-/* // Power Callback Sample
-int power_callback(int unknown, int pwrflags,void *common){
-	if(pwrflags & PSP_POWER_CB_SUSPENDING) // Suspension soft patch
-		pwrflags |= PSP_POWER_CB_POWER_SWITCH;
-	if ((pwrflags & PSP_POWER_CB_POWER_SWITCH))	{
-		sioFinalize();	// suspend all sio code..
-	}
-	else if(pwrflags & PSP_POWER_CB_RESUME_COMPLETE){
-		sioInit(NowBaud); // reinit as previus baud..
-	}
-	return 0;
-}
-*/
+#define PSP_UART_TXFULL  			0x20
+#define PSP_UART_RXEMPTY 			0x10
+#define PSP_UART_CLK   				96000000
 
 // Reception Functions :D
-#define SERIAL_BUFFER_SIZE 1024 // More space for data
+#define SERIAL_BUFFER_SIZE 			1024 // More space for data
 
-typedef struct ring_buffer{ // Smart ring buffer
-  unsigned char buffer[SERIAL_BUFFER_SIZE];
-  volatile unsigned int head;
-  volatile unsigned int tail;
-}ring_buffer;
+static SceUID sio_eventflag 		= -1;
 
-ring_buffer rx_buffer = { { 0 }, 0, 0}; // We create the rx buffer, and initial config ;)
+// imported power functions prototypes
+void 	sceHprmEnd(void);
+void 	sceHprmReset(void);
+void 	sceHprmInit(void);
 
-void store_char(unsigned char c, ring_buffer *buffer){ // Function that inserts an entry in the ring
+void 	sceSysregUartIoEnable(int);
+
+// prototypes for stubs
+int 	sceCodecOutputEnable(int, int); // enable_hearphone, enable_speaker
+int 	sceHprmSetConnectCallback(int); // for parameters...just a guess: have to look into disassemblies.
+int 	sceHprmRegisterCallback(int);
+
+typedef struct { // Smart ring buffer
+	unsigned char 			buffer[SERIAL_BUFFER_SIZE];
+	volatile unsigned int 	head;
+	volatile unsigned int 	tail;
+} ringbuffer_t;
+
+ringbuffer_t rx_buffer = { { 0 }, 0, 0}; // We create the rx buffer, and initial config ;)
+
+void store_char(unsigned char c, ringbuffer_t *buffer){ // Function that inserts an entry in the ring
 	int i = (unsigned int)(buffer->head + 1) % SERIAL_BUFFER_SIZE;
 	// if we should be storing the received character into the location
 	// just before the tail (meaning that the head would advance to the
