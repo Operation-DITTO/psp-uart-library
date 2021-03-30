@@ -1,116 +1,137 @@
-/*
-	SIO DRIVER - "Serial Conductor"
-	Driver for use "sio" over user app
-
-	Developed by Davis Nuñez - David.nunezaguilera.131@gmail.com
-	
-	Licensed by Creative Commons Attribution-Share 4.0
-		https://creativecommons.org/licenses/by-sa/4.0/
-
-	Version: 
-		4.0 Full - 13/01/2016 - 13:34 pm
-		Added an intelligent buffer ring, and re written functions.
-	Thanks to:
-	Tyranid's - Sio based on pspLink.
-	forum.ps2dev.org - More info over that port.
-	Jean - Initial Driver sio.
-	
-	Do whatever you want with this...if you want, give credit to the original authors, and put your name in this list if you enhance it :)
-*/
+//
+// psp-uart-library 
+// (c) 2016 DavisDev
+// (c) 2021 MotoLegacy
+// 
+// psp-uart-library is licensed under a
+// Creative Commons Attribution-ShareAlike 4.0 International License.
+// 
+// You should have received a copy of the license along with this
+// work. If not, see <http://creativecommons.org/licenses/by-sa/4.0/>.
+//
+// psp-uart-library is a fork of SioDriver by DavisDev, the original
+// repository can be found here:
+// https://github.com/DavisDev/SioDriver
+//
+// Original additional credits for SioDriver:
+// Tyranid's - Sio based on psplink
+// forum.ps2dev.org - More info over that port
+// Jean - Initial driver sio
+//
 
 #include <pspsdk.h>
 #include <pspintrman_kernel.h>
 #include <pspintrman.h>
 #include <pspsyscon.h>
 
-PSP_MODULE_INFO("sioDriverv4", 0x1006, 1, 1);
+//
+// Module info - remove these if embedding into application!
+//
+PSP_MODULE_INFO("pspUART", 0x1006, 1, 1);
 PSP_NO_CREATE_MAIN_THREAD(); 
 
-// no changes here...the same good old consts
+//
+// Memory addresses for the UART controller
+//
 #define PSP_UART4_DIV1 				0xBE500024
 #define PSP_UART4_DIV2 				0xBE500028
 #define PSP_UART4_CTRL 				0xBE50002C
 #define PSP_UART4_FIFO 				0xBE500000
 #define PSP_UART4_STAT 				0xBE500018
 
-#define SIO_CHAR_RECV_EVENT  		0x01
+#define PSP_UART_INTR_ADDR			0xBE500040
+#define PSP_UART_INTR_CLR_ADDR 		0xBE500044
 
 #define PSP_UART_TXFULL  			0x20
 #define PSP_UART_RXEMPTY 			0x10
 #define PSP_UART_CLK   				96000000
 
-// Reception Functions :D
-#define SERIAL_BUFFER_SIZE 			1024 // More space for data
+#define SIO_CHAR_RECV_EVENT  		0x01
+#define SERIAL_BUFFER_SIZE 			64				// Unlikely to require a larger buffer, PSP is limited to 4800 bytes per second anyway
 
 static SceUID sio_eventflag 		= -1;
 
-// imported power functions prototypes
+//
+// Stubs for sio.c
+// 
 void 	sceHprmEnd(void);
 void 	sceHprmReset(void);
 void 	sceHprmInit(void);
-
 void 	sceSysregUartIoEnable(int);
 
-// prototypes for stubs
-int 	sceCodecOutputEnable(int, int); // enable_hearphone, enable_speaker
-int 	sceHprmSetConnectCallback(int); // for parameters...just a guess: have to look into disassemblies.
-int 	sceHprmRegisterCallback(int);
+//
+// Ring Buffer struct
+//
+typedef struct
+{
+	unsigned char 			buffer[SERIAL_BUFFER_SIZE];		// Transmitted data
+	volatile unsigned int 	head;							// The HEAD of the ringbuffer
+	volatile unsigned int 	tail;							// The TAIL of the ringbuffer
+}
 
-typedef struct { // Smart ring buffer
-	unsigned char 			buffer[SERIAL_BUFFER_SIZE];
-	volatile unsigned int 	head;
-	volatile unsigned int 	tail;
-} ringbuffer_t;
+// Create the dummy ring buffer
+ringbuffer_t rx_buffer = { { 0 }, 0, 0 };
 
-ringbuffer_t rx_buffer = { { 0 }, 0, 0}; // We create the rx buffer, and initial config ;)
-
-void store_char(unsigned char c, ringbuffer_t *buffer){ // Function that inserts an entry in the ring
+//
+// store_char(c, buffer)
+// Insert data into the ringbuffer
+//
+void store_char(unsigned char c, ringbuffer_t *buffer)
+{
+	// helps prevent writing into the tail and causing a buffer overflow
 	int i = (unsigned int)(buffer->head + 1) % SERIAL_BUFFER_SIZE;
-	// if we should be storing the received character into the location
-	// just before the tail (meaning that the head would advance to the
-	// current location of the tail), we're about to overflow the buffer
-	// and so we don't write the character or advance the head.
-	if(i != buffer->tail){
+
+	if (i != buffer->tail) {
 		buffer->buffer[buffer->head] = c;
 		buffer->head = i;
 	}
 }
 
-int intr_handler(void *arg){ // Call it the callback or thread of recv ;)
-	// disable interrupt...we don't want SIO to call intr_handler again while it's already running
-	// don't know if it's really needed here, but i remember this was a must in pc programming
-	// MAYBE i'm better use "int intrs = pspSdkDisableInterrupts();" (disable ALL intrs) to handle reader/writer conflicts
+//
+// intr_handler(arg)
+// Callback thread for the SIO
+//
+int intr_handler(void *arg)
+{
+	// Disable interupts to avoid complication
+	sceKernelDisableIntr(PSP_HPREMOTE_INT);
 
-	sceKernelDisableIntr(PSP_HPREMOTE_INT); 
+	// Clear the interupt state
+	u32 stat = _lw(PSP_UART_INTR_ADDR);
+	_sw(stat, PSP_UART_INTR_CLR_ADDR);
 
-	/* Read out the interrupt state and clear it */
-	u32 stat = _lw(0xBE500040);
-	_sw(stat, 0xBE500044);
-
-	if(!(_lw(PSP_UART4_STAT) & PSP_UART_RXEMPTY)) {
+	// Our transmitter is not empty, store into the ring buffer and set our event flag
+	if (!(_lw(PSP_UART4_STAT & PSP_UART_RXEMPTY))) {
 		store_char(_lw(PSP_UART4_FIFO), &rx_buffer);
-		sceKernelSetEventFlag(sio_eventflag, SIO_CHAR_RECV_EVENT); // set "we got something!!" flag
+		sceKernelSetEventFlag(sio_eventflag, SIO_CHAR_RECV_EVENT);
 	}
 
-	sceKernelEnableIntr(PSP_HPREMOTE_INT); // re-enable interrupt
-	// MAYBE i'm better use "pspSdkEnableInterrupts(intrs);"
+	// Enable interupts again
+	sceKernelEnableIntr(PSP_HPREMOTE_INT);
 
-	return -1; 
+	return -1;
 }
 
-void _sioInit(void){ // Function that handles the drivers and setup port
+//
+// _pspUARTInit()
+// Handles enabling the UART transmitter and sets up HPRM
+//
+void _pspUARTInit(void)
+{
 	sceHprmReset();
-	/* Shut down the remote driver */
 	sceHprmEnd();
-	/* Enable UART 4 */
 	sceSysregUartIoEnable(4);
-	/* Enable remote control power */
-	sceSysconCtrlHRPower(1);
+	sceSysregUartIoEnable(1);
 }
 
-void sioSetBaud(int baud){// Set & Calcule baud and clock ;) Set baud of sio
-	// no need to export this....always call sioInit()...
-	int div1, div2; // low, high bits of divisor value
+//
+// pspUARTSetBaud(baud)
+// Sets the BUAD (bytes per second) for the transmitter
+//
+void pspUARTSetBaud(int baud)
+{
+	// low, high bits
+	int div1, div2;
 
 	div1 = PSP_UART_CLK / baud;
 	div2 = div1 & 0x3F;
@@ -118,22 +139,32 @@ void sioSetBaud(int baud){// Set & Calcule baud and clock ;) Set baud of sio
 
 	_sw(div1, PSP_UART4_DIV1);
 	_sw(div2, PSP_UART4_DIV2);
-	_sw(0x60, PSP_UART4_CTRL); // ?? someone do it with 0x70
+	_sw(0x60, PSP_UART4_CTRL);
 }
 
-void sioInit(int baud){ // Main Function Starts all
+//
+// pspUARTInit(baud)
+// User-executed intitalization function
+//
+void pspUARTInit(int baud)
+{
 	unsigned int k1 = pspSdkSetK1(0);
-	_sioInit();
-	sio_eventflag = sceKernelCreateEventFlag("SioShellEvent", 0, 0, 0); // Creamos la flag sio
-	
-	sceKernelRegisterIntrHandler(PSP_HPREMOTE_INT, 1, intr_handler, NULL, NULL); // Registramos el thread de recv
+	_pspUARTInit();
+	sio_eventflag = sceKernelCreateEventFlag("SioShellEvent", 0, 0, 0);
+
+	sceKernelRegisterIntrHandler(PSP_HPREMOTE_INT, 1, intr_handler, NULL, NULL);
 	sceKernelEnableIntr(PSP_HPREMOTE_INT);
 	sceKernelDelayThread(2000000);
-	sioSetBaud(baud); // Set Baud ;)
+	pspUARTSetBaud(baud);
 	pspSdkSetK1(k1); 
 }
 
-void sioFinalize(){ // Main function terminates all
+//
+// pspUARTTerminate
+// Terminate the UART I/O
+//
+void pspUARTTerminate()
+{
 	unsigned int k1 = pspSdkSetK1(0);
 	sceSysconCtrlHRPower(0);
 	sceKernelDeleteEventFlag(sio_eventflag);
@@ -144,13 +175,22 @@ void sioFinalize(){ // Main function terminates all
 	pspSdkSetK1(k1);
 }
 
-int sioAvailable(void){ // Availability function returns something greater than 0 if there is anything over buff
+//
+// pspUARTAvailable
+// Checks if the ringbuffer is empty, returns > 0 if not
+//
+int pspUARTAvailable(void)
+{
 	return (unsigned int)(SERIAL_BUFFER_SIZE + rx_buffer.head - rx_buffer.tail) % SERIAL_BUFFER_SIZE;
 }
 
-int sioRead(void){ // Get char over buffer "ring - anillo" ;D
-	//unsigned int k1 = pspSdkSetK1(0); pspSdkSetK1(k1);
-	// if the head isn't ahead of the tail, we don't have any characters
+//
+// pspUARTRead
+// Returns char inside of ringbuffer, if not empty
+//
+int pspUARTRead(void)
+{
+	// empty buffer
 	if (rx_buffer.head == rx_buffer.tail) {
 		return -1;
 	} else {
@@ -160,38 +200,50 @@ int sioRead(void){ // Get char over buffer "ring - anillo" ;D
 	}
 }
 
-void sioWrite(int ch){ // Write char to hw ;)
-	// as you see this is _blocking_...not an issue for 
-	// normal use as everithing doing I/O
-	// should run in its own thread..in addition, HW FIFO isn't 
-	// working at all by now, so queue should not be that long :)
-	while(_lw(PSP_UART4_STAT) & PSP_UART_TXFULL); 
+//
+// pspUARTWrite(ch)
+// Writes a character to transmit to the UART chip,
+// should be threaded.
+//
+void pspUARTWrite(int ch)
+{
+	while(_lw(PSP_UART4_STAT) & PSP_UART_TXFULL);
 	_sw(ch, PSP_UART4_FIFO);
 }
 
-void sioWriteBuff(const char *data, int len){ // Write buffer to hw and set len
+//
+// pspUARTWriteBuffer(data, len)
+// Writes a buffer 1 character at a time using pspUARTWrite()
+//
+void pspUARTWriteBuffer(const char *data, int len)
+{
 	unsigned int k1 = pspSdkSetK1(0);
-	int i = 0;
-	for(i = 0; i < len; i++){
-		sioWrite(data[i]);
+
+	for (int i = 0; i < len; i++) {
+		pspUARTWrite(data[i]);
 	}
+
 	pspSdkSetK1(k1);
 }
 
-void sioPrint(const char *str){ // Write buffer to hw and calcule automatic len
+//
+// pspUARTPrint(str)
+// Write buffer and automatically determine length
+//
+void pspUARTPrint(const char *str)
+{
 	unsigned int k1 = pspSdkSetK1(0); 
+
 	while (*str){
-		sioWrite(*str);
+		pspUARTWrite(*str);
 		str++;
 	}
+
 	pspSdkSetK1(k1); 
 }
 
-// not used but required:
-int module_start(SceSize args, void *argp){
-	return 0;
-}
-
-int module_stop(){
-	return 0;
-}
+//
+// Module info stubs - remove these if embedding into application!
+//
+int module_start(SceSize args, void *argp){ return 0; }
+int module_stop() { return 0; }

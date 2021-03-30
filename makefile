@@ -1,4 +1,4 @@
-TARGET 			= sioDriverv4
+TARGET 			= libpspuart
 OBJS 			= main.o
 
 INCDIR 			=

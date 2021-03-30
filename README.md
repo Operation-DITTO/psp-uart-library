@@ -1,16 +1,21 @@
-# SioDriver
-Library Serial In/Out port on the PSP
-============================
+# psp-uart-library
 
-[Header File](sioDriver.h)
+## About
 
-This is a library that allows the use of serial console functions of the PSP.
+This is the source for the psp-uart-library. It is designed to simplify communication with the PlayStation Portable's UART hardware for serial I/O.
 
-The serial port is located on the same site as the remote port,
-slim models is attached to port Audio / Video - LCD.
+## Building
 
-This can be used commonly for testing purposes.
+All that is required to build is the PSPSDK. Run `make` in the root directory to build the libpspuart.a binary.
 
-But equally it can be used to communicate with devices other than the console, for example "Arduino", "GPS", etc ...
+## Usage
 
-As a standard protocol, the usability becomes high, and allow adding peripherals, or different forms of reaction in the console.
+See the [header file](pspuart.h) for a list of functions to interface with the UART hardware.
+
+## Extra Credits
+
+psp-uart-library is a fork of DavisDev's [SioDriver](https://github.com/DavisDev/SioDriver) library, designed to be cleaner and more concise. The following are the extra credits listed under the SioDriver source header.
+
+* Tyranid - SIO based on psplink
+* forum.ps2dev.org - More info over the port
+* Jean - initial SIO driver
