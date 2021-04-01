@@ -1,7 +1,7 @@
 //
 // psp-uart-library 
 // (c) 2016 DavisDev
-// (c) 2021 MotoLegacy
+// (c) 2021 OP-DITTO Team
 // 
 // psp-uart-library is licensed under a
 // Creative Commons Attribution-ShareAlike 4.0 International License.
