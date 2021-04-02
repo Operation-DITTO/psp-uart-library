@@ -1,6 +1,8 @@
 TARGET 			= libpspuart
 OBJS 			= main.o
 
+alib 			= libpspuart.a
+
 INCDIR 			=
 CFLAGS 			= -O2 -G0 -Wall -g
 CXXFLAGS 		= $(CFLAGS) -fno-exceptions -fno-rtti
@@ -16,6 +18,10 @@ USE_KERNEL_LIBS	= 1
 LIBDIR 			=
 LDFLAGS 		= -mno-crt0 -nostartfiles
 LIBS 			= -lpspsdk -lpsphprm_driver
+
+
+$(alib): $(OBJS)
+	$(AR) rcs $@ $^
 
 PSPSDK			= $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak

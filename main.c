@@ -67,7 +67,7 @@ typedef struct
 	unsigned char 			buffer[SERIAL_BUFFER_SIZE];		// Transmitted data
 	volatile unsigned int 	head;							// The HEAD of the ringbuffer
 	volatile unsigned int 	tail;							// The TAIL of the ringbuffer
-}
+} ringbuffer_t;
 
 // Create the dummy ring buffer
 ringbuffer_t rx_buffer = { { 0 }, 0, 0 };
