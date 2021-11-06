@@ -241,9 +241,3 @@ void pspUARTPrint(const char *str)
 
 	pspSdkSetK1(k1); 
 }
-
-//
-// Module info stubs - remove these if embedding into application!
-//
-int module_start(SceSize args, void *argp){ return 0; }
-int module_stop() { return 0; }
