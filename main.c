@@ -27,8 +27,8 @@
 //
 // Module info - remove these if embedding into application!
 //
-PSP_MODULE_INFO("pspUART", 0x1006, 1, 1);
-PSP_NO_CREATE_MAIN_THREAD(); 
+//PSP_MODULE_INFO("pspUART", 0x1006, 1, 1);
+//PSP_NO_CREATE_MAIN_THREAD(); 
 
 //
 // Memory addresses for the UART controller
@@ -101,7 +101,7 @@ int intr_handler(void *arg)
 	_sw(stat, PSP_UART_INTR_CLR_ADDR);
 
 	// Our transmitter is not empty, store into the ring buffer and set our event flag
-	if (!(_lw(PSP_UART4_STAT & PSP_UART_RXEMPTY))) {
+	if (!(_lw(PSP_UART4_STAT) & PSP_UART_RXEMPTY)) {
 		store_char(_lw(PSP_UART4_FIFO), &rx_buffer);
 		sceKernelSetEventFlag(sio_eventflag, SIO_CHAR_RECV_EVENT);
 	}
@@ -207,7 +207,7 @@ int pspUARTRead(void)
 //
 void pspUARTWrite(int ch)
 {
-	while(_lw(PSP_UART4_STAT) & PSP_UART_TXFULL);
+	while(_lw(PSP_UART4_STAT) & PSP_UART_TXFULL);	
 	_sw(ch, PSP_UART4_FIFO);
 }
 
