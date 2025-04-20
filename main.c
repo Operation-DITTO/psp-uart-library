@@ -24,7 +24,6 @@
 #include <pspintrman.h>
 #include <pspsyscon.h>
 
-
 //
 // Memory addresses for the UART controller
 //
