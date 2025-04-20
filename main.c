@@ -24,11 +24,6 @@
 #include <pspintrman.h>
 #include <pspsyscon.h>
 
-//
-// Module info - remove these if embedding into application!
-//
-//PSP_MODULE_INFO("pspUART", 0x1006, 1, 1);
-//PSP_NO_CREATE_MAIN_THREAD(); 
 
 //
 // Memory addresses for the UART controller
